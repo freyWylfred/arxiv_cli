@@ -1,0 +1,54 @@
+# ========================================
+# arXiv 論文取得スクリプト 設定ファイル
+# ========================================
+# このファイルをコピーして "config.ini" として保存してください
+# 
+# 使い方:
+# 1. このファイルを "config.ini" にコピー
+# 2. 以下の設定を編集
+# 3. get_arXiv.py を実行
+
+[DateRange]
+# 検索開始日（YYYY/MM/DD形式）
+# 例: 2024/01/01
+start_date = 2024/01/01
+
+# 検索終了日（YYYY/MM/DD形式）
+# ※1日だけの場合はstart_dateと同じ日付を指定してください
+# 例: 2024/01/31 （この場合、1月1日から1月31日まで31日間処理されます）
+end_date = 2024/01/01
+
+[Search]
+# 検索クエリ（arXiv API形式）
+# all:"キーワード1" OR all:"キーワード2" の形式で複数キーワードを指定可能
+# 
+# 例:
+#   - all:"machine learning" OR all:"deep learning"
+#   - all:"quantum computing"
+#   - ti:"neural network"  (タイトルのみ検索)
+#   - au:"Smith"  (著者名で検索)
+query = all:"model extraction" OR all:"prompt injection"
+
+# 最大取得件数（arXiv APIから取得する論文の最大数）
+# 注意: 多すぎるとAPIのレート制限に引っかかる可能性があります
+# 推奨値: 100～500
+max_results = 100
+
+[Files]
+# Excel出力ファイル名
+# 拡張子は .xlsx を推奨
+# 相対パスまたは絶対パスで指定可能
+# 
+# 例:
+#   - arxiv_summaries.xlsx (同じフォルダに保存)
+#   - C:\Users\YourName\Documents\arxiv_results.xlsx (絶対パス)
+excel_file = arxiv_summaries.xlsx
+
+# ========================================
+# 注意事項
+# ========================================
+# - 日付は必ず YYYY/MM/DD 形式で入力してください
+# - start_date は end_date 以前の日付である必要があります
+# - コメント行（#で始まる行）は設定に影響しません
+# - 空白行は無視されます
+# - 各設定値の前後の空白は自動的に削除されます

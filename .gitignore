@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.log
+
+# Project specific
+config.ini
+.env
+*.xlsx
+*.csv
+20*/
+
+# Office temporary files
+~$*.pptx
+~$*.docx
+~$*.xlsx
+
+# Documentation (if not needed in repo)
+*.pptx
+*.docx
+
+# Alternative versions (if not needed)
+*realUse.py
