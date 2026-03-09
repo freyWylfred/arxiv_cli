@@ -1,22 +1,56 @@
-# 必要なライブラリのインポート
-import urllib.parse  # URLエンコーディング用
-import feedparser  # arXiv APIからのRSSフィード解析用
+# ========================================
+# arxiv_cli.py
+# ========================================
+# 概要:
+#   arXiv から論文を検索・取得し、PDFをダウンロードして
+#   Azure OpenAI API を使用して日本語要約を生成するスクリプト
+#
+# 主な機能:
+#   - arXiv API を使用した論文検索
+#   - 指定日付範囲の論文をフィルタリング
+#   - PDF ファイルの自動ダウンロード
+#   - Azure OpenAI API による日本語要約生成（オプション）
+#   - Excel ファイルへの結果出力（ハイパーリンク付き）
+#   - 処理ログの出力
+#
+# 使用方法:
+#   1. config.ini を設定
+#   2. python arxiv_cli.py を実行
+#
+# 必要なライブラリ:
+#   pip install openai==0.28.1 feedparser PyMuPDF requests pandas openpyxl
+#
+# ライセンス: MIT License
+# ========================================
+
+# ========================================
+# ライブラリのインポート
+# ========================================
+# 標準ライブラリ
+import urllib.parse      # URLエンコーディング用
 from urllib.parse import urlparse  # URLのパース（分解）用
-import os  # ファイルパス操作用
-import requests  # PDFダウンロード用
-import fitz  # PyMuPDF - PDFからテキスト抽出用
-import openai  # OpenAI APIでの要約生成用
+import os                # ファイルパス操作用
+import time              # リトライ用待機時間
+import logging           # ログ出力用
+import configparser      # INIファイル読み込み用
 from datetime import datetime, timedelta  # 日付フィルタリング用
-import pandas as pd  # Excel出力用
+
+# サードパーティライブラリ
+import feedparser        # arXiv APIからのRSSフィード解析用
+import requests          # PDFダウンロード用
+import fitz              # PyMuPDF - PDFからテキスト抽出用
+import openai            # OpenAI APIでの要約生成用
+import pandas as pd      # Excel出力用
 from openpyxl import load_workbook  # 既存Excelファイル操作用
 from openpyxl.worksheet.hyperlink import Hyperlink  # ハイパーリンク用
-import time  # リトライ用待機時間
-import logging  # ログ出力用
-import configparser  # INIファイル読み込み用
 
 # ========================================
 # ログ設定
 # ========================================
+# ログの出力設定
+# - ファイル出力: arxiv_process.log（UTF-8エンコーディング）
+# - コンソール出力: 標準出力
+# - ログレベル: INFO以上を記録
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -662,22 +696,28 @@ if __name__ == "__main__":
     print("arXiv 論文取得・要約スクリプト")
     print("="*60)
 
-    # 設定ファイルを読み込み
+    # ========================================
+    # STEP 1: 設定ファイルの読み込み
+    # ========================================
     print("\n設定ファイル (config.ini) を読み込んでいます...")
     config = load_config()
 
-    start_date = config['start_date']
-    end_date = config['end_date']
-    query = config['query']
-    max_results = config['max_results']
-    excel_file = config['excel_file']
-    use_openai = config['use_openai']
-    deployment_name = config['openai_deployment_name']
+    # 設定値を変数に展開
+    start_date = config['start_date']           # 検索開始日
+    end_date = config['end_date']               # 検索終了日
+    query = config['query']                     # 検索クエリ
+    max_results = config['max_results']         # 最大取得件数
+    excel_file = config['excel_file']           # Excel出力ファイル名
+    use_openai = config['use_openai']           # OpenAI使用フラグ
+    deployment_name = config['openai_deployment_name']  # デプロイメント名
 
-    # OpenAI APIの設定
+    # ========================================
+    # STEP 2: OpenAI APIの初期設定
+    # ========================================
     if use_openai:
         setup_openai(config)
 
+    # 設定内容をコンソールに表示
     print(f"\n✅ 設定の読み込みが完了しました")
     print(f"\n【読み込んだ設定情報】")
     print(f"  検索期間: {start_date.strftime('%Y/%m/%d')} ～ {end_date.strftime('%Y/%m/%d')}")
@@ -686,23 +726,27 @@ if __name__ == "__main__":
     print(f"  出力ファイル: {excel_file}")
     print(f"  OpenAI要約: {'有効' if use_openai else '無効'}")
 
-    # 日数を計算
+    # 処理対象の日数を計算
     days_count = (end_date - start_date).days + 1
     print(f"  処理対象日数: {days_count}日")
 
-    # 設定確認のため、実際に使用する値をログに記録
+    # ログに記録
     logging.info(f"実行開始 - 検索期間: {start_date} ～ {end_date}, クエリ: {query}, 最大件数: {max_results}")
 
     # ========================================
-    # arXiv API検索設定
+    # STEP 3: arXiv API検索URLの構築
     # ========================================
     # arXiv APIのベースURL
     base = 'http://export.arxiv.org/api/query?search_query='
 
-    # 完全なAPI URL を構築（INIファイルの設定値を使用）
+    # 完全なAPI URLを構築
+    # - query: 検索クエリ（URLエンコード）
+    # - start: 結果の開始位置（0から）
+    # - max_results: 最大取得件数
+    # - sortBy: ソート基準（submittedDate=投稿日）
+    # - sortOrder: ソート順（descending=降順=新しい順）
     url = base + urllib.parse.quote(query) + f'&start=0&max_results={max_results}&sortBy=submittedDate&sortOrder=descending'
 
-    # 実際に使用するURLをログに記録
     logging.info(f"arXiv API URL: {url}")
 
     print("\narXiv APIからデータを取得中...")
@@ -710,40 +754,43 @@ if __name__ == "__main__":
     print(f"最大取得件数: {max_results}件")
 
     # ========================================
-    # フィード取得
+    # STEP 4: arXiv APIからフィード取得
     # ========================================
-    # arXiv APIからRSSフィードを取得してパース
+    # feedparserでRSSフィードを取得・パース
     feed = feedparser.parse(url)
 
     print(f"取得した論文数: {len(feed.entries)}")
 
     # ========================================
-    # 日付範囲でループ処理
+    # STEP 5: 日付範囲でループ処理
     # ========================================
-    total_processed = 0
-    current_date = start_date
+    # 各日付に対して論文を処理
+    total_processed = 0                 # 処理した論文の総数
+    current_date = start_date           # ループの現在日付
 
-    # トークン使用量の累計
+    # トークン使用量の累計（API料金計算用）
     total_token_usage = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
 
+    # 日付ごとにprocess_date()を呼び出して処理
     while current_date <= end_date:
+        # 指定日付の論文を処理
         processed_count, token_usage = process_date(current_date, feed, excel_file, use_openai, deployment_name)
         total_processed += processed_count
 
-        # トークン使用量を累計
+        # トークン使用量を累計に加算
         total_token_usage['prompt_tokens'] += token_usage['prompt_tokens']
         total_token_usage['completion_tokens'] += token_usage['completion_tokens']
         total_token_usage['total_tokens'] += token_usage['total_tokens']
 
-        # 次の日付へ
+        # 次の日付へ進む
         current_date += timedelta(days=1)
 
     # ========================================
-    # 料金計算（概算）
+    # STEP 6: API料金計算（概算）
     # ========================================
     # GPT-4の一般的な料金（2024年時点の概算）
-    # 入力: $0.03 / 1K tokens
-    # 出力: $0.06 / 1K tokens
+    # 入力トークン: $0.03 / 1,000 tokens
+    # 出力トークン: $0.06 / 1,000 tokens
     input_cost = (total_token_usage['prompt_tokens'] / 1000) * 0.03
     output_cost = (total_token_usage['completion_tokens'] / 1000) * 0.06
     total_cost = input_cost + output_cost
@@ -752,7 +799,7 @@ if __name__ == "__main__":
     total_cost_jpy = total_cost * 150
 
     # ========================================
-    # 最終結果
+    # STEP 7: 実行結果サマリーの出力
     # ========================================
     print("\n" + "="*60)
     print("全ての処理が完了しました。")
@@ -771,11 +818,20 @@ if __name__ == "__main__":
     print(f"  推定料金 (USD): ${total_cost:.4f}")
     print(f"  推定料金 (JPY): ¥{total_cost_jpy:.2f} (1ドル=150円換算)")
     print("="*60)
+
+    # ログに最終結果を記録
     logging.info(f"全処理完了: {days_count}日間で{total_processed}件の論文を処理")
     logging.info(f"Excel出力: {excel_file}, クエリ: {query}, 最大件数: {max_results}")
     logging.info(f"トークン使用: 入力{total_token_usage['prompt_tokens']}, 出力{total_token_usage['completion_tokens']}, 合計{total_token_usage['total_tokens']}")
     logging.info(f"推定料金: ${total_cost:.4f} (¥{total_cost_jpy:.2f})")
     print(f"\n✅ 結果は '{excel_file}' に保存されています。")
 
-# 必要なライブラリのインストール
-# pip install openai==0.28.1 feedparser PyMuPDF requests pandas openpyxl
+# ========================================
+# インストール手順
+# ========================================
+# 必要なライブラリのインストールコマンド:
+#   pip install openai==0.28.1 feedparser PyMuPDF requests pandas openpyxl
+#
+# 注意:
+#   - openai==0.28.1 は Azure OpenAI の従来APIに対応したバージョンです
+#   - PyMuPDF は fitz としてインポートされます
