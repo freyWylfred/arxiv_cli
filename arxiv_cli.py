@@ -9,6 +9,7 @@ import openai  # OpenAI APIでの要約生成用
 from datetime import datetime, timedelta  # 日付フィルタリング用
 import pandas as pd  # Excel出力用
 from openpyxl import load_workbook  # 既存Excelファイル操作用
+from openpyxl.worksheet.hyperlink import Hyperlink  # ハイパーリンク用
 import time  # リトライ用待機時間
 import logging  # ログ出力用
 import configparser  # INIファイル読み込み用
@@ -217,6 +218,39 @@ def summarize_pdf(pdf_path, max_pages=5, use_openai=False):
 # ========================================
 # Excel保存関数
 # ========================================
+def add_hyperlinks_to_sheet(workbook, sheet_name, url_column='PDF URL'):
+    """
+    指定したシートのURLカラムにハイパーリンクを設定する関数
+
+    Args:
+        workbook: openpyxlのワークブックオブジェクト
+        sheet_name (str): シート名
+        url_column (str): URLが含まれるカラム名
+    """
+    sheet = workbook[sheet_name]
+
+    # ヘッダー行からURLカラムのインデックスを取得
+    url_col_index = None
+    for col_idx, cell in enumerate(sheet[1], start=1):
+        if cell.value == url_column:
+            url_col_index = col_idx
+            break
+
+    if url_col_index is None:
+        logging.warning(f"URLカラム '{url_column}' が見つかりません")
+        return
+
+    # 2行目以降（データ行）にハイパーリンクを設定
+    for row_idx in range(2, sheet.max_row + 1):
+        cell = sheet.cell(row=row_idx, column=url_col_index)
+        url_value = cell.value
+        if url_value and url_value.startswith('http'):
+            cell.hyperlink = url_value
+            cell.style = 'Hyperlink'  # ハイパーリンクスタイルを適用
+
+    logging.info(f"シート '{sheet_name}' のURLにハイパーリンクを設定しました")
+
+
 def save_to_excel(data_list, sheet_name, excel_file="arxiv_summaries.xlsx", max_retries=3):
     """
     要約結果をExcelファイルに保存する関数
@@ -265,12 +299,16 @@ def save_to_excel(data_list, sheet_name, excel_file="arxiv_summaries.xlsx", max_
                             combined_df.to_excel(writer, sheet_name=sheet_name, index=False)
                             # シートを先頭に移動
                             workbook.move_sheet(sheet_name, offset=-len(workbook.sheetnames)+1)
+                            # URLにハイパーリンクを設定
+                            add_hyperlinks_to_sheet(workbook, sheet_name)
                             logging.info(f"既存シート '{sheet_name}' にデータを追加しました（先頭に移動）")
                         else:
                             # 新しいシートとして追加
                             df.to_excel(writer, sheet_name=sheet_name, index=False)
                             # シートを先頭に移動
                             workbook.move_sheet(sheet_name, offset=-len(workbook.sheetnames)+1)
+                            # URLにハイパーリンクを設定
+                            add_hyperlinks_to_sheet(workbook, sheet_name)
                             logging.info(f"新規シート '{sheet_name}' を作成しました（先頭に配置）")
                 except PermissionError:
                     if attempt < max_retries - 1:
@@ -283,9 +321,15 @@ def save_to_excel(data_list, sheet_name, excel_file="arxiv_summaries.xlsx", max_
                         print(f"\n{error_msg}")
                         return False
             else:
-                # 新規Excelファイルを作成
+                # 新規 Excelファイルを作成
                 df.to_excel(excel_file, sheet_name=sheet_name, index=False, engine='openpyxl')
                 logging.info(f"新規Excelファイル '{excel_file}' を作成しました")
+
+                # ハイパーリンクを設定するためにファイルを再度開く
+                wb = load_workbook(excel_file)
+                add_hyperlinks_to_sheet(wb, sheet_name)
+                wb.save(excel_file)
+                wb.close()
 
             print(f"\n✅ Excelに保存しました: {excel_file} (シート: {sheet_name})")
             logging.info(f"Excel保存成功: {len(data_list)}件のデータ")
