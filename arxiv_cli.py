@@ -63,9 +63,30 @@ def load_config(config_file='config.ini'):
             exit(1)
 
     try:
+        # 「今日のだけ」オプションの取得
+        today_only = config.getboolean('DateRange', 'today_only', fallback=False)
+
         # 日付範囲の取得
-        start_date_str = config.get('DateRange', 'start_date').strip()
-        end_date_str = config.get('DateRange', 'end_date').strip()
+        if today_only:
+            # 「今日のだけ」が有効な場合、今日の日付を使用
+            start_date = datetime.now().date()
+            end_date = datetime.now().date()
+            start_date_str = start_date.strftime("%Y/%m/%d")
+            end_date_str = end_date.strftime("%Y/%m/%d")
+            logging.info("「今日のだけ」モードが有効です。今日の日付を使用します。")
+        else:
+            # 通常モード：INIファイルから日付を読み込み
+            start_date_str = config.get('DateRange', 'start_date').strip()
+            end_date_str = config.get('DateRange', 'end_date').strip()
+            
+            # 日付のバリデーション
+            start_date = datetime.strptime(start_date_str, "%Y/%m/%d").date()
+            end_date = datetime.strptime(end_date_str, "%Y/%m/%d").date()
+
+            if start_date > end_date:
+                logging.error("start_dateがend_dateより後の日付になっています")
+                print("❌ エラー: start_dateはend_date以前の日付を指定してください")
+                exit(1)
 
         # 検索設定の取得
         query = config.get('Search', 'query').strip()
@@ -74,14 +95,8 @@ def load_config(config_file='config.ini'):
         # ファイル設定の取得
         excel_file = config.get('Files', 'excel_file').strip()
 
-        # 日付のバリデーション
-        start_date = datetime.strptime(start_date_str, "%Y/%m/%d").date()
-        end_date = datetime.strptime(end_date_str, "%Y/%m/%d").date()
-
-        if start_date > end_date:
-            logging.error("start_dateがend_dateより後の日付になっています")
-            print("❌ エラー: start_dateはend_date以前の日付を指定してください")
-            exit(1)
+        # OpenAI設定の取得（デフォルト: 無効）
+        use_openai = config.getboolean('OpenAI', 'use_openai', fallback=False)
 
         # 設定値の検証ログ
         logging.info("="*60)
@@ -90,6 +105,7 @@ def load_config(config_file='config.ini'):
         logging.info(f"  検索クエリ: {query}")
         logging.info(f"  最大取得件数: {max_results}")
         logging.info(f"  Excel出力ファイル: {excel_file}")
+        logging.info(f"  OpenAI要約: {'有効' if use_openai else '無効'}")
         logging.info("="*60)
 
         return {
@@ -97,7 +113,8 @@ def load_config(config_file='config.ini'):
             'end_date': end_date,
             'query': query,
             'max_results': max_results,
-            'excel_file': excel_file
+            'excel_file': excel_file,
+            'use_openai': use_openai
         }
 
     except Exception as e:
@@ -124,16 +141,18 @@ if not openai.api_key:
 # ========================================
 # PDF要約関数
 # ========================================
-def summarize_pdf(pdf_path, max_pages=5):
+def summarize_pdf(pdf_path, max_pages=5, use_openai=False):
     """
     PDFファイルからテキストを抽出し、OpenAI APIを使って日本語で要約する関数
 
     Args:
         pdf_path (str): 要約したいPDFファイルのパス
         max_pages (int): 要約対象の最大ページ数（トークン制限対策）
+        use_openai (bool): OpenAI APIを使用するかどうか（デフォルト: False）
 
     Returns:
-        str: OpenAI APIによって生成された要約テキスト
+        tuple: (要約テキスト, 使用トークン数の辞書)
+               使用トークン数の辞書は {'prompt_tokens': int, 'completion_tokens': int, 'total_tokens': int}
     """
     try:
         # PyMuPDFを使ってPDFファイルを開く
@@ -152,34 +171,48 @@ def summarize_pdf(pdf_path, max_pages=5):
 
         # テキストが空の場合
         if not full_text.strip():
-            return "テキストを抽出できませんでした。"
+            return "テキストを抽出できませんでした。", {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
 
         # テキストを最大8000文字に制限（トークン制限対策）
         full_text = full_text[:8000]
 
         # ========================================
-        # OpenAI API呼び出し（コメントアウト）
+        # OpenAI API呼び出し
         # ========================================
-        # # Azure OpenAI APIを使って要約を生成
-        # response = openai.ChatCompletion.create(
-        #     engine="gpt-4.1-2",  # デプロイメント名
-        #     messages=[
-        #         {"role": "user", "content": "次の論文の冒頭部分を日本語で簡潔に要約してください（200文字程度）：\n\n" + full_text}
-        #     ],
-        #     max_tokens=500,
-        #     temperature=0.5
-        # )
-        # 
-        # # APIレスポンスから要約テキストを取得
-        # summary = response.choices[0].message['content']
-        # return summary
+        if use_openai:
+            # Azure OpenAI APIを使って要約を生成
+            response = openai.ChatCompletion.create(
+                engine="gpt-4.1-2",  # デプロイメント名
+                messages=[
+                    {"role": "user", "content": "次の論文の冒頭部分を日本語で簡潔に要約してください（200文字程度）：\n\n" + full_text}
+                ],
+                max_tokens=500,
+                temperature=0.5
+            )
 
-        # 暫定的な要約（OpenAI API未使用）
-        summary = "【要約未実施】OpenAI API呼び出しがコメントアウトされています。"
-        return summary
+            # APIレスポンスから要約テキストと使用トークン数を取得
+            summary = response.choices[0].message['content']
+            usage = response.usage
+            token_usage = {
+                'prompt_tokens': usage.prompt_tokens,
+                'completion_tokens': usage.completion_tokens,
+                'total_tokens': usage.total_tokens
+            }
+            return summary, token_usage
+        else:
+            # OpenAI API未使用時の暫定的な要約
+            summary = "【要約未実施】OpenAI APIが無効に設定されています。config.iniのuse_openai=trueで有効化できます。"
+            # API未使用の場合は概算トークン数を返す（文字数の1/4程度）
+            estimated_tokens = len(full_text) // 4
+            token_usage = {
+                'prompt_tokens': estimated_tokens,
+                'completion_tokens': 100,  # 要約の概算トークン数
+                'total_tokens': estimated_tokens + 100
+            }
+            return summary, token_usage
 
     except Exception as e:
-        return f"要約生成エラー: {str(e)}"
+        return f"要約生成エラー: {str(e)}", {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
 
 # ========================================
 # Excel保存関数
@@ -279,7 +312,7 @@ def save_to_excel(data_list, sheet_name, excel_file="arxiv_summaries.xlsx", max_
 # ========================================
 # メイン処理関数
 # ========================================
-def process_date(target_datetime, feed, excel_file):
+def process_date(target_datetime, feed, excel_file, use_openai=False):
     """
     指定された日付の論文を処理する関数
 
@@ -287,12 +320,16 @@ def process_date(target_datetime, feed, excel_file):
         target_datetime (date): 処理対象の日付
         feed: arXiv APIから取得したフィード
         excel_file (str): Excel出力ファイル名
+        use_openai (bool): OpenAI APIを使用するかどうか
 
     Returns:
-        int: 処理した論文数
+        tuple: (処理した論文数, トークン使用量の辞書)
     """
     target_date = target_datetime.strftime("%Y/%m/%d")
     sheet_name = target_date.replace("/", "-")
+
+    # トークン使用量の累計
+    total_token_usage = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
 
     logging.info(f"処理開始: {target_date} (Excel出力先: {excel_file}, シート名: {sheet_name})")
     print(f"\n{'='*60}")
@@ -314,7 +351,7 @@ def process_date(target_datetime, feed, excel_file):
                 print(f"⚠️  既に調査済みです！日付: {target_date} (シート: {sheet_name})")
                 logging.info(f"既に調査済み: {target_date} (シート: {sheet_name})")
                 print(f"この日付をスキップします。")
-                return 0
+                return 0, total_token_usage
 
             workbook.close()
             logging.info(f"新規調査対象: {target_date}")
@@ -447,13 +484,18 @@ def process_date(target_datetime, feed, excel_file):
             # ----------------------------------------
             print("要約を生成中...")
             logging.info(f"要約生成開始: {arxiv_id}")
-            summary = summarize_pdf(pdf_file_path)  # 日付フォルダ内のPDFファイルパスを使用
+            summary, token_usage = summarize_pdf(pdf_file_path, use_openai=use_openai)  # タプルで受け取る
+
+            # トークン使用量を累計
+            total_token_usage['prompt_tokens'] += token_usage['prompt_tokens']
+            total_token_usage['completion_tokens'] += token_usage['completion_tokens']
+            total_token_usage['total_tokens'] += token_usage['total_tokens']
 
             # 要約が空またはエラーの場合
             if not summary or "エラー" in summary:
                 logging.warning(f"要約生成に問題が発生しました: {arxiv_id}")
             else:
-                logging.info(f"要約生成完了: {len(summary)}文字")
+                logging.info(f"要約生成完了: {len(summary)}文字, トークン使用: {token_usage['total_tokens']}")
 
             # ----------------------------------------
             # 結果の出力
@@ -543,7 +585,7 @@ def process_date(target_datetime, feed, excel_file):
         else:
             logging.warning("保存するデータがありません")
 
-    return found_count
+    return found_count, total_token_usage
 
 # ========================================
 # メイン実行部
@@ -562,6 +604,7 @@ if __name__ == "__main__":
     query = config['query']
     max_results = config['max_results']
     excel_file = config['excel_file']
+    use_openai = config['use_openai']
 
     print(f"\n✅ 設定の読み込みが完了しました")
     print(f"\n【読み込んだ設定情報】")
@@ -569,6 +612,7 @@ if __name__ == "__main__":
     print(f"  検索クエリ: {query}")
     print(f"  最大取得件数: {max_results}件")
     print(f"  出力ファイル: {excel_file}")
+    print(f"  OpenAI要約: {'有効' if use_openai else '無効'}")
 
     # 日数を計算
     days_count = (end_date - start_date).days + 1
@@ -607,12 +651,33 @@ if __name__ == "__main__":
     total_processed = 0
     current_date = start_date
 
+    # トークン使用量の累計
+    total_token_usage = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
+
     while current_date <= end_date:
-        processed_count = process_date(current_date, feed, excel_file)
+        processed_count, token_usage = process_date(current_date, feed, excel_file, use_openai)
         total_processed += processed_count
+
+        # トークン使用量を累計
+        total_token_usage['prompt_tokens'] += token_usage['prompt_tokens']
+        total_token_usage['completion_tokens'] += token_usage['completion_tokens']
+        total_token_usage['total_tokens'] += token_usage['total_tokens']
 
         # 次の日付へ
         current_date += timedelta(days=1)
+
+    # ========================================
+    # 料金計算（概算）
+    # ========================================
+    # GPT-4の一般的な料金（2024年時点の概算）
+    # 入力: $0.03 / 1K tokens
+    # 出力: $0.06 / 1K tokens
+    input_cost = (total_token_usage['prompt_tokens'] / 1000) * 0.03
+    output_cost = (total_token_usage['completion_tokens'] / 1000) * 0.06
+    total_cost = input_cost + output_cost
+
+    # 日本円換算（1ドル=150円として概算）
+    total_cost_jpy = total_cost * 150
 
     # ========================================
     # 最終結果
@@ -627,8 +692,17 @@ if __name__ == "__main__":
     print(f"  Excel出力先: {excel_file}")
     print(f"  使用したクエリ: {query}")
     print("="*60)
+    print(f"【OpenAI API 使用状況】")
+    print(f"  入力トークン数: {total_token_usage['prompt_tokens']:,} tokens")
+    print(f"  出力トークン数: {total_token_usage['completion_tokens']:,} tokens")
+    print(f"  合計トークン数: {total_token_usage['total_tokens']:,} tokens")
+    print(f"  推定料金 (USD): ${total_cost:.4f}")
+    print(f"  推定料金 (JPY): ¥{total_cost_jpy:.2f} (1ドル=150円換算)")
+    print("="*60)
     logging.info(f"全処理完了: {days_count}日間で{total_processed}件の論文を処理")
     logging.info(f"Excel出力: {excel_file}, クエリ: {query}, 最大件数: {max_results}")
+    logging.info(f"トークン使用: 入力{total_token_usage['prompt_tokens']}, 出力{total_token_usage['completion_tokens']}, 合計{total_token_usage['total_tokens']}")
+    logging.info(f"推定料金: ${total_cost:.4f} (¥{total_cost_jpy:.2f})")
     print(f"\n✅ 結果は '{excel_file}' に保存されています。")
 
 # 必要なライブラリのインストール
