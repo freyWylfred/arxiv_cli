@@ -1,57 +1,34 @@
 # ========================================
-# arXiv 論文取得スクリプト 設定ファイル
+# arXiv CLI 設定ファイル (config.ini.template)
 # ========================================
-# このファイルをコピーして "config.ini" として保存してください
-#
-# 使い方:
-# 1. このファイルを "config.ini" にコピー
-# 2. 以下の設定を編集
-# 3. arxiv_cli.py を実行
+# コピーして config.ini として使用してください
+# ========================================
 
+# --- 日付設定 ---
+[DateRange]
+today_only = false          # true: 今日の日付のみ処理（下記日付を無視）
+start_date = 2024/01/01     # 検索開始日（YYYY/MM/DD）
+end_date = 2024/01/01       # 検索終了日（YYYY/MM/DD）
+
+# --- 検索設定 ---
+[Search]
+# クエリ例: all:"machine learning" OR all:"deep learning"
+query = all:"model extraction" OR all:"prompt injection"
+max_results = 100           # 最大取得件数（推奨: 100〜500）
+
+# --- 出力設定 ---
+[Files]
+excel_file = arxiv_summaries.xlsx
+
+# --- OpenAI設定（オプション） ---
 [OpenAI]
-# OpenAI要約機能を有効にする場合は true に変更
-use_openai = false
+use_openai = false          # 要約機能: true で有効化
 
-# Azure OpenAI API タイプ
+# Azure OpenAI 接続情報
 api_type = azure
-
-# Azure OpenAI エンドポイント
 endpoint = https://your-resource-name.openai.azure.com/
-
-# Azure OpenAI APIバージョン
 api_version = 2024-02-15-preview
-
-# Azure OpenAI APIキー
-# ※ セキュリティのため、環境変数 AZURE_OPENAI_API_KEY での設定を推奨
-api_key = your-api-key-here
-
-# Azure OpenAI デプロイメント名
 deployment_name = gpt-4
 
-[DateRange]
-# 今日の日付のみを処理するかどうか（true/false）
-# true の場合、start_dateとend_dateの設定は無視されます
-today_only = false
-
-# 検索開始日（YYYY/MM/DD形式）
-start_date = 2024/01/01
-
-# 検索終了日（YYYY/MM/DD形式）
-end_date = 2024/01/01
-
-[Search]
-# 検索クエリ（arXiv API形式）
-# all:"キーワード1" OR all:"キーワード2" の形式で複数キーワードを指定可能
-# 例: all:"machine learning" OR all:"deep learning"
-query = all:"model extraction" OR all:"prompt injection"
-
-# 最大取得件数（arXiv APIから取得する論文の最大数）
-# 注意: 多すぎるとAPIのレート制限に引っかかる可能性があります
-# 推奨値: 100～500
-max_results = 100
-
-[Files]
-# Excel出力ファイル名
-# 拡張子は .xlsx を推奨
-# 相対パスまたは絶対パスで指定可能
-excel_file = arxiv_summaries.xlsx
+# APIキー（環境変数 AZURE_OPENAI_API_KEY 推奨）
+api_key = your-api-key-here
