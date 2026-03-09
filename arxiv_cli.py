@@ -99,6 +99,13 @@ def load_config(config_file='config.ini'):
         # OpenAI設定の取得（デフォルト: 無効）
         use_openai = config.getboolean('OpenAI', 'use_openai', fallback=False)
 
+        # OpenAI詳細設定の取得（config.ini優先、なければ環境変数、なければデフォルト値）
+        openai_api_type = config.get('OpenAI', 'api_type', fallback=os.environ.get("OPENAI_API_TYPE", "azure"))
+        openai_endpoint = config.get('OpenAI', 'endpoint', fallback=os.environ.get("AZURE_OPENAI_ENDPOINT", "https://your-resource-name.openai.azure.com/"))
+        openai_api_version = config.get('OpenAI', 'api_version', fallback=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview"))
+        openai_api_key = config.get('OpenAI', 'api_key', fallback=os.environ.get("AZURE_OPENAI_API_KEY", ""))
+        openai_deployment_name = config.get('OpenAI', 'deployment_name', fallback="gpt-4")
+
         # 設定値の検証ログ
         logging.info("="*60)
         logging.info("INIファイルから読み込んだ設定:")
@@ -107,6 +114,10 @@ def load_config(config_file='config.ini'):
         logging.info(f"  最大取得件数: {max_results}")
         logging.info(f"  Excel出力ファイル: {excel_file}")
         logging.info(f"  OpenAI要約: {'有効' if use_openai else '無効'}")
+        if use_openai:
+            logging.info(f"  OpenAI APIタイプ: {openai_api_type}")
+            logging.info(f"  OpenAI エンドポイント: {openai_endpoint}")
+            logging.info(f"  OpenAI デプロイメント名: {openai_deployment_name}")
         logging.info("="*60)
 
         return {
@@ -115,7 +126,12 @@ def load_config(config_file='config.ini'):
             'query': query,
             'max_results': max_results,
             'excel_file': excel_file,
-            'use_openai': use_openai
+            'use_openai': use_openai,
+            'openai_api_type': openai_api_type,
+            'openai_endpoint': openai_endpoint,
+            'openai_api_version': openai_api_version,
+            'openai_api_key': openai_api_key,
+            'openai_deployment_name': openai_deployment_name
         }
 
     except Exception as e:
@@ -125,24 +141,29 @@ def load_config(config_file='config.ini'):
         exit(1)
 
 # ========================================
-# OpenAI API設定
+# OpenAI API設定関数
 # ========================================
-# Azure OpenAI API設定（環境変数から読み込み）
-# 環境変数の設定方法は README.md を参照
-openai.api_type = os.environ.get("OPENAI_API_TYPE", "azure")
-openai.api_base = os.environ.get("AZURE_OPENAI_ENDPOINT", "https://your-resource-name.openai.azure.com/")
-openai.api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
-openai.api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+def setup_openai(config):
+    """
+    config辞書からOpenAI APIを設定する関数
 
-# API キーの存在確認（要約機能を使用する場合のみ必要）
-if not openai.api_key:
-    logging.warning("Azure OpenAI API キーが設定されていません。要約機能は無効です。")
-    logging.warning("環境変数 AZURE_OPENAI_API_KEY を設定してください。")
+    Args:
+        config (dict): load_config()から返された設定辞書
+    """
+    openai.api_type = config.get('openai_api_type', 'azure')
+    openai.api_base = config.get('openai_endpoint', '')
+    openai.api_version = config.get('openai_api_version', '2024-02-15-preview')
+    openai.api_key = config.get('openai_api_key', '')
+
+    # API キーの存在確認（要約機能を使用する場合のみ必要）
+    if config.get('use_openai', False) and not openai.api_key:
+        logging.warning("Azure OpenAI API キーが設定されていません。")
+        logging.warning("config.ini の api_key または環境変数 AZURE_OPENAI_API_KEY を設定してください。")
 
 # ========================================
 # PDF要約関数
 # ========================================
-def summarize_pdf(pdf_path, max_pages=5, use_openai=False):
+def summarize_pdf(pdf_path, max_pages=5, use_openai=False, deployment_name="gpt-4"):
     """
     PDFファイルからテキストを抽出し、OpenAI APIを使って日本語で要約する関数
 
@@ -150,6 +171,7 @@ def summarize_pdf(pdf_path, max_pages=5, use_openai=False):
         pdf_path (str): 要約したいPDFファイルのパス
         max_pages (int): 要約対象の最大ページ数（トークン制限対策）
         use_openai (bool): OpenAI APIを使用するかどうか（デフォルト: False）
+        deployment_name (str): Azure OpenAIのデプロイメント名（デフォルト: gpt-4）
 
     Returns:
         tuple: (要約テキスト, 使用トークン数の辞書)
@@ -183,7 +205,7 @@ def summarize_pdf(pdf_path, max_pages=5, use_openai=False):
         if use_openai:
             # Azure OpenAI APIを使って要約を生成
             response = openai.ChatCompletion.create(
-                engine="gpt-4.1-2",  # デプロイメント名
+                engine=deployment_name,  # config.iniで設定されたデプロイメント名
                 messages=[
                     {"role": "user", "content": "次の論文の冒頭部分を日本語で簡潔に要約してください（200文字程度）：\n\n" + full_text}
                 ],
@@ -356,7 +378,7 @@ def save_to_excel(data_list, sheet_name, excel_file="arxiv_summaries.xlsx", max_
 # ========================================
 # メイン処理関数
 # ========================================
-def process_date(target_datetime, feed, excel_file, use_openai=False):
+def process_date(target_datetime, feed, excel_file, use_openai=False, deployment_name="gpt-4"):
     """
     指定された日付の論文を処理する関数
 
@@ -365,6 +387,7 @@ def process_date(target_datetime, feed, excel_file, use_openai=False):
         feed: arXiv APIから取得したフィード
         excel_file (str): Excel出力ファイル名
         use_openai (bool): OpenAI APIを使用するかどうか
+        deployment_name (str): Azure OpenAIのデプロイメント名
 
     Returns:
         tuple: (処理した論文数, トークン使用量の辞書)
@@ -528,7 +551,7 @@ def process_date(target_datetime, feed, excel_file, use_openai=False):
             # ----------------------------------------
             print("要約を生成中...")
             logging.info(f"要約生成開始: {arxiv_id}")
-            summary, token_usage = summarize_pdf(pdf_file_path, use_openai=use_openai)  # タプルで受け取る
+            summary, token_usage = summarize_pdf(pdf_file_path, use_openai=use_openai, deployment_name=deployment_name)  # タプルで受け取る
 
             # トークン使用量を累計
             total_token_usage['prompt_tokens'] += token_usage['prompt_tokens']
@@ -649,6 +672,11 @@ if __name__ == "__main__":
     max_results = config['max_results']
     excel_file = config['excel_file']
     use_openai = config['use_openai']
+    deployment_name = config['openai_deployment_name']
+
+    # OpenAI APIの設定
+    if use_openai:
+        setup_openai(config)
 
     print(f"\n✅ 設定の読み込みが完了しました")
     print(f"\n【読み込んだ設定情報】")
@@ -699,7 +727,7 @@ if __name__ == "__main__":
     total_token_usage = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
 
     while current_date <= end_date:
-        processed_count, token_usage = process_date(current_date, feed, excel_file, use_openai)
+        processed_count, token_usage = process_date(current_date, feed, excel_file, use_openai, deployment_name)
         total_processed += processed_count
 
         # トークン使用量を累計
