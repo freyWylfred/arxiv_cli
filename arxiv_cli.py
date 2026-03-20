@@ -27,6 +27,7 @@
 # ライブラリのインポート
 # ========================================
 # 標準ライブラリ
+import sys               # exe判定・パス解決用
 import urllib.parse      # URLエンコーディング用
 from urllib.parse import urlparse  # URLのパース（分解）用
 import os                # ファイルパス操作用
@@ -45,6 +46,25 @@ from openpyxl import load_workbook  # 既存Excelファイル操作用
 from openpyxl.worksheet.hyperlink import Hyperlink  # ハイパーリンク用
 
 # ========================================
+# exe実行時のパス解決
+# ========================================
+def get_app_dir():
+    """
+    アプリケーションの実行ディレクトリを取得する関数
+    PyInstallerでexe化された場合はexeの配置場所を返す
+    """
+    if getattr(sys, 'frozen', False):
+        # PyInstallerでビルドされたexeの場合
+        return os.path.dirname(sys.executable)
+    else:
+        # 通常のPythonスクリプトの場合
+        return os.path.dirname(os.path.abspath(__file__))
+
+# カレントディレクトリをアプリケーションディレクトリに設定
+# （exe実行時にconfig.ini等の相対パスが正しく解決されるようにする）
+os.chdir(get_app_dir())
+
+# ========================================
 # ログ設定
 # ========================================
 # ログの出力設定
@@ -61,11 +81,77 @@ logging.basicConfig(
 )
 
 # ========================================
+# デフォルト設定ファイル生成
+# ========================================
+DEFAULT_CONFIG_CONTENT = """\
+[OpenAI]
+# OpenAI要約機能を有効にする場合は true に変更
+use_openai = false
+
+# Azure OpenAI APIタイプ
+api_type = azure
+
+# Azure OpenAI エンドポイント
+endpoint = https://your-resource-name.openai.azure.com/
+
+# Azure OpenAI APIバージョン
+api_version = 2024-02-15-preview
+
+# Azure OpenAI APIキー
+api_key =
+
+# Azure OpenAI デプロイメント名
+deployment_name = gpt-4
+
+[DateRange]
+# 今日の日付のみを処理するかどうか (true/false)
+# true の場合 start_date と end_date の設定は無視されます
+today_only = true
+
+# 検索開始日 (YYYY/MM/DD形式)
+start_date = 2026/01/01
+
+# 検索終了日 (YYYY/MM/DD形式)
+end_date = 2026/01/01
+
+[Search]
+# 検索クエリ (arXiv API形式)
+query = all:"model extraction" OR all:"prompt injection"
+
+# 最大取得件数
+max_results = 100
+
+[Files]
+# Excel出力ファイル名
+excel_file = arxiv_summaries.xlsx
+"""
+
+
+def create_default_config(config_file='config.ini'):
+    """
+    デフォルトの config.ini を自動生成する関数
+
+    Args:
+        config_file (str): 生成する設定ファイルのパス
+    """
+    try:
+        with open(config_file, 'w', encoding='utf-8') as f:
+            f.write(DEFAULT_CONFIG_CONTENT)
+        logging.info(f"デフォルト設定ファイルを自動生成しました: {config_file}")
+        print(f"📝 設定ファイルが見つからなかったため、デフォルトで自動生成しました: {config_file}")
+    except Exception as e:
+        logging.error(f"設定ファイルの自動生成に失敗しました: {str(e)}")
+        print(f"❌ 設定ファイルの自動生成に失敗しました: {str(e)}")
+        exit(1)
+
+
+# ========================================
 # 設定ファイル読み込み
 # ========================================
 def load_config(config_file='config.ini'):
     """
     INIファイルから設定を読み込む関数
+    ファイルが存在しない場合はデフォルト設定で自動生成する
 
     Args:
         config_file (str): 設定ファイルのパス
@@ -74,10 +160,7 @@ def load_config(config_file='config.ini'):
         dict: 設定情報を格納した辞書
     """
     if not os.path.exists(config_file):
-        logging.error(f"設定ファイルが見つかりません: {config_file}")
-        print(f"❌ 設定ファイルが見つかりません: {config_file}")
-        print("config.iniファイルを作成してください。")
-        exit(1)
+        create_default_config(config_file)
 
     config = configparser.ConfigParser()
 
@@ -125,7 +208,16 @@ def load_config(config_file='config.ini'):
 
         # 検索設定の取得
         query = config.get('Search', 'query').strip()
+        if not query:
+            logging.error("検索クエリが空です")
+            print("❌ エラー: [Search] query が空です。検索キーワードを設定してください")
+            exit(1)
+
         max_results = config.getint('Search', 'max_results')
+        if max_results <= 0:
+            logging.error(f"max_results が不正な値です: {max_results}")
+            print("❌ エラー: [Search] max_results は1以上の整数を指定してください")
+            exit(1)
 
         # ファイル設定の取得
         excel_file = config.get('Files', 'excel_file').strip()
@@ -520,9 +612,11 @@ def process_date(target_datetime, feed, excel_file, use_openai=False, deployment
             filename = os.path.basename(parsed.path)
 
             # バージョン番号を除いたファイル名を生成
-            if 'v' in filename:
-                name_no_ext = filename[:-4]
-                base_id = name_no_ext.split('v')[0]
+            # arXiv のファイル名は "2506.12345v2.pdf" 形式
+            # rsplit で最後の 'v' のみを対象にし、ID 自体に 'v' を含む場合の誤動作を防ぐ
+            name_no_ext = filename.rsplit('.', 1)[0]  # "2506.12345v2"
+            if 'v' in name_no_ext and name_no_ext.rsplit('v', 1)[-1].isdigit():
+                base_id = name_no_ext.rsplit('v', 1)[0]
                 filename_no_version = base_id + '.pdf'
             else:
                 filename_no_version = filename
@@ -624,6 +718,7 @@ def process_date(target_datetime, feed, excel_file, use_openai=False, deployment
             results_data.append(result_data)
 
         except Exception as e:
+            logging.error(f"論文エントリ処理中にエラー: {str(e)}")
             print(f"エラーが発生しました: {str(e)}")
             continue
 
@@ -692,6 +787,7 @@ def process_date(target_datetime, feed, excel_file, use_openai=False, deployment
 # メイン実行部
 # ========================================
 if __name__ == "__main__":
+  try:
     print("="*60)
     print("arXiv 論文取得・要約スクリプト")
     print("="*60)
@@ -757,7 +853,26 @@ if __name__ == "__main__":
     # STEP 4: arXiv APIからフィード取得
     # ========================================
     # feedparserでRSSフィードを取得・パース
-    feed = feedparser.parse(url)
+    try:
+        feed = feedparser.parse(url)
+    except Exception as e:
+        logging.error(f"arXiv APIからのフィード取得に失敗しました: {str(e)}")
+        print(f"❌ arXiv APIへの接続に失敗しました: {str(e)}")
+        print("ネットワーク接続を確認してください。")
+        input("\nEnterキーを押して終了...")
+        exit(1)
+
+    # フィード取得結果の検証
+    if feed.bozo:
+        bozo_msg = str(getattr(feed, 'bozo_exception', '不明なエラー'))
+        logging.warning(f"arXiv APIフィードの解析で問題が発生しました: {bozo_msg}")
+        print(f"⚠️  arXiv APIフィードの解析で問題が検出されました: {bozo_msg}")
+
+    if not feed.entries:
+        logging.warning("arXiv APIから論文が1件も取得できませんでした")
+        print("⚠️  arXiv APIから論文が1件も取得できませんでした。")
+        print("  - 検索クエリを確認してください")
+        print("  - arXiv APIが一時的に利用できない可能性があります")
 
     print(f"取得した論文数: {len(feed.entries)}")
 
@@ -825,6 +940,16 @@ if __name__ == "__main__":
     logging.info(f"トークン使用: 入力{total_token_usage['prompt_tokens']}, 出力{total_token_usage['completion_tokens']}, 合計{total_token_usage['total_tokens']}")
     logging.info(f"推定料金: ${total_cost:.4f} (¥{total_cost_jpy:.2f})")
     print(f"\n✅ 結果は '{excel_file}' に保存されています。")
+
+  except KeyboardInterrupt:
+    print("\n\n処理が中断されました。")
+    logging.info("ユーザーによる中断")
+  except Exception as e:
+    logging.error(f"予期しないエラーが発生しました: {str(e)}", exc_info=True)
+    print(f"\n❌ 予期しないエラーが発生しました: {str(e)}")
+    print("詳細は arxiv_process.log を確認してください。")
+  finally:
+    input("\nEnterキーを押して終了...")
 
 # ========================================
 # インストール手順
