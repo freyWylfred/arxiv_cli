@@ -1,54 +1,20 @@
 # -*- mode: python ; coding: utf-8 -*-
-# ========================================
-# arxiv_cli.spec
-# ========================================
-# PyInstaller ビルド設定ファイル
-#
-# ビルド方法:
-#   pyinstaller arxiv_cli.spec
-#
-# または:
-#   build_exe.bat を実行
-# ========================================
 
-import sys
-import os
-
-block_cipher = None
 
 a = Analysis(
     ['arxiv_cli.py'],
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=[
-        'feedparser',
-        'requests',
-        'fitz',
-        'fitz.fitz',
-        'openai',
-        'pandas',
-        'openpyxl',
-        'openpyxl.worksheet.hyperlink',
-        'configparser',
-        'urllib.parse',
-    ],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[
-        'tkinter',
-        'matplotlib',
-        'scipy',
-        'PIL',
-        'IPython',
-        'jupyter',
-        'notebook',
-    ],
+    excludes=[],
     noarchive=False,
+    optimize=0,
 )
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
@@ -60,18 +26,16 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=True,          # コンソールウィンドウを表示（ログ出力のため）
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
 )
-
 coll = COLLECT(
     exe,
     a.binaries,
-    a.zipfiles,
     a.datas,
     strip=False,
     upx=False,

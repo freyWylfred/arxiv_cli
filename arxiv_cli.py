@@ -142,7 +142,7 @@ def create_default_config(config_file='config.ini'):
     except Exception as e:
         logging.error(f"設定ファイルの自動生成に失敗しました: {str(e)}")
         print(f"❌ 設定ファイルの自動生成に失敗しました: {str(e)}")
-        exit(1)
+        sys.exit(1)
 
 
 # ========================================
@@ -162,7 +162,7 @@ def load_config(config_file='config.ini'):
     if not os.path.exists(config_file):
         create_default_config(config_file)
 
-    config = configparser.ConfigParser()
+    config = configparser.ConfigParser(inline_comment_prefixes=('#', ';'))
 
     # INIファイルを読み込み（UTF-8エンコーディング）
     try:
@@ -170,7 +170,7 @@ def load_config(config_file='config.ini'):
     except Exception as e:
         logging.error(f"INIファイルの読み込みに失敗しました: {str(e)}")
         print(f"❌ INIファイルの読み込みに失敗しました: {str(e)}")
-        exit(1)
+        sys.exit(1)
 
     # セクションの存在確認
     required_sections = ['DateRange', 'Search', 'Files']
@@ -178,7 +178,7 @@ def load_config(config_file='config.ini'):
         if not config.has_section(section):
             logging.error(f"必須セクション [{section}] がINIファイルに見つかりません")
             print(f"❌ エラー: 設定ファイルに [{section}] セクションがありません")
-            exit(1)
+            sys.exit(1)
 
     try:
         # 「今日のだけ」オプションの取得
@@ -204,20 +204,20 @@ def load_config(config_file='config.ini'):
             if start_date > end_date:
                 logging.error("start_dateがend_dateより後の日付になっています")
                 print("❌ エラー: start_dateはend_date以前の日付を指定してください")
-                exit(1)
+                sys.exit(1)
 
         # 検索設定の取得
         query = config.get('Search', 'query').strip()
         if not query:
             logging.error("検索クエリが空です")
             print("❌ エラー: [Search] query が空です。検索キーワードを設定してください")
-            exit(1)
+            sys.exit(1)
 
         max_results = config.getint('Search', 'max_results')
         if max_results <= 0:
             logging.error(f"max_results が不正な値です: {max_results}")
             print("❌ エラー: [Search] max_results は1以上の整数を指定してください")
-            exit(1)
+            sys.exit(1)
 
         # ファイル設定の取得
         excel_file = config.get('Files', 'excel_file').strip()
@@ -264,7 +264,7 @@ def load_config(config_file='config.ini'):
         logging.error(f"設定ファイルの読み込みエラー: {str(e)}")
         print(f"❌ 設定ファイルの読み込みエラー: {str(e)}")
         print("config.iniファイルの形式を確認してください。")
-        exit(1)
+        sys.exit(1)
 
 # ========================================
 # OpenAI API設定関数
@@ -860,7 +860,7 @@ if __name__ == "__main__":
         print(f"❌ arXiv APIへの接続に失敗しました: {str(e)}")
         print("ネットワーク接続を確認してください。")
         input("\nEnterキーを押して終了...")
-        exit(1)
+        sys.exit(1)
 
     # フィード取得結果の検証
     if feed.bozo:
