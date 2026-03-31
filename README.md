@@ -1,68 +1,80 @@
-# arXiv 論文取得・要約スクリプト
+# arXiv Paper Fetcher & Summarizer
 
-arXiv APIを使用して指定した期間の論文を検索・ダウンロードし、Excelファイルに整理して保存します。
-オプションでAzure OpenAI APIを使用した日本語要約機能も利用できます。
+> 🇯🇵 [Japanese README (docs/README_ja.md)](./docs/README_ja.md)
 
-## ファイル構成
+A CLI tool that searches and downloads papers from arXiv for a specified date range using the arXiv API, and saves the results to an Excel file.
+Optionally generates summaries via the Azure OpenAI API.
+
+## Features
+
+- Search arXiv papers by keyword and date range
+- Automatically download PDFs into date-based folders
+- Export results to Excel with hyperlinks
+- Optional AI-powered paper summarization (Azure OpenAI)
+
+## File Structure
 
 ```
 arxiv_cli/
-├── arxiv_cli.py          # メインスクリプト
-├── config.ini            # 設定ファイル（実行前に編集）
-├── config.ini.template   # 設定ファイルのテンプレート
-├── verify_config.py      # 設定確認用スクリプト
-├── requirements.txt      # 必要なライブラリ
-├── .env.example          # 環境変数のサンプル
-└── README.md             # このファイル
+├── arxiv_cli.py          # Main script
+├── config.ini            # Configuration file (edit before running)
+├── config.ini.template   # Configuration template
+├── verify_config.py      # Configuration verifier
+├── requirements.txt      # Python dependencies
+├── .env.example          # Environment variable sample
+├── README.md             # This file (English)
+└── docs/README_ja.md     # Japanese README
 ```
 
-## 必要なライブラリ
+## Requirements
 
 ```bash
 pip install -r requirements.txt
 ```
 
-または個別にインストール：
+Or install individually:
+
 ```bash
 pip install openai==0.28.1 feedparser PyMuPDF requests pandas openpyxl
 ```
 
-## クイックスタート
+## Quick Start
 
-1. `config.ini.template` を `config.ini` にコピー
-2. `config.ini` を編集して検索条件を設定
-3. `python arxiv_cli.py` を実行
+1. Copy `config.ini.template` to `config.ini`
+2. Edit `config.ini` to set your search criteria
+3. Run `python arxiv_cli.py`
 
-## 設定ファイル (config.ini)
+## Configuration (config.ini)
 
-### 基本設定
+### Basic Settings
 
 ```ini
 [DateRange]
-start_date = 2024/01/01    # 検索開始日（YYYY/MM/DD形式）
-end_date = 2024/01/31      # 検索終了日（YYYY/MM/DD形式）
-today_only = false         # trueにすると今日の論文のみ取得
+start_date = 2024/01/01    # Start date (YYYY/MM/DD)
+end_date = 2024/01/31      # End date (YYYY/MM/DD)
+today_only = false          # true: fetch today's papers only
 
 [Search]
-query = all:"machine learning"  # 検索クエリ
-max_results = 100               # 最大取得件数
+query = all:"machine learning"  # Search query
+max_results = 100                # Max results
 
 [Files]
-excel_file = arxiv_summaries.xlsx  # 出力ファイル名
+excel_file = arxiv_summaries.xlsx  # Output file
 
 [OpenAI]
-use_openai = false  # OpenAI要約機能（true/false）
+use_openai = false  # AI summarization (true/false)
 ```
 
-### OpenAI要約機能
+### OpenAI Summarization
 
-`use_openai = true` に設定すると、Azure OpenAI APIを使用して論文の要約を自動生成します。
+Set `use_openai = true` to enable automatic paper summarization via Azure OpenAI API.
 
-**デフォルト: false（無効）**
+**Default: false (disabled)**
 
-要約機能を使用する場合は、以下の環境変数を設定してください：
+Set the following environment variables to use the summarization feature:
 
 #### Windows (PowerShell)
+
 ```powershell
 $env:AZURE_OPENAI_API_KEY="your_api_key_here"
 $env:AZURE_OPENAI_ENDPOINT="https://your-resource-name.openai.azure.com/"
@@ -70,84 +82,94 @@ $env:AZURE_OPENAI_API_VERSION="2024-02-15-preview"
 ```
 
 #### Linux / macOS
+
 ```bash
 export AZURE_OPENAI_API_KEY="your_api_key_here"
 export AZURE_OPENAI_ENDPOINT="https://your-resource-name.openai.azure.com/"
 export AZURE_OPENAI_API_VERSION="2024-02-15-preview"
 ```
 
-## 使い方
+## Usage
 
-### 1. 設定ファイルの準備
+### 1. Prepare Configuration
+
 ```bash
 cp config.ini.template config.ini
 ```
 
-### 2. 設定の編集
-`config.ini` を開いて検索条件を編集します。
+### 2. Edit Configuration
 
-### 3. 設定の確認（オプション）
+Open `config.ini` and edit the search parameters.
+
+### 3. Verify Configuration (Optional)
+
 ```bash
 python verify_config.py
 ```
 
-### 4. スクリプトの実行
+### 4. Run
+
 ```bash
 python arxiv_cli.py
 ```
 
-## 設定項目の詳細
+## Configuration Reference
 
-### [DateRange] - 日付範囲
+### [DateRange] – Date Range
 
-| 項目 | 説明 | 形式 | 例 |
-|------|------|------|-----|
-| start_date | 検索開始日 | YYYY/MM/DD | 2024/01/01 |
-| end_date | 検索終了日 | YYYY/MM/DD | 2024/01/31 |
-| today_only | 今日のみモード | true/false | false |
+| Key | Description | Format | Example |
+|------|-------------|--------|---------|
+| `start_date` | Start date | YYYY/MM/DD | 2024/01/01 |
+| `end_date` | End date | YYYY/MM/DD | 2024/01/31 |
+| `today_only` | Today-only mode | true/false | false |
 
-### [Search] - 検索設定
+### [Search] – Search Settings
 
-| 項目 | 説明 | 例 |
-|------|------|-----|
-| query | arXiv検索クエリ | all:"machine learning" |
-| max_results | 最大取得件数 | 100 |
+| Key | Description | Example |
+|------|-------------|---------|
+| `query` | arXiv search query | `all:"machine learning"` |
+| `max_results` | Max number of results | 100 |
 
-**検索クエリの例:**
-- `all:"machine learning"` - すべてのフィールドから検索
-- `ti:"neural network"` - タイトルのみ検索
-- `au:"Smith"` - 著者名で検索
-- `all:"ML" OR all:"AI"` - 複数キーワード（OR検索）
-- `all:"ML" AND all:"AI"` - 複数キーワード（AND検索）
+**Query Examples:**
 
-### [Files] - ファイル設定
+- `all:"machine learning"` – Search all fields
+- `ti:"neural network"` – Title only
+- `au:"Smith"` – Author name
+- `all:"ML" OR all:"AI"` – OR search
+- `all:"ML" AND all:"AI"` – AND search
 
-| 項目 | 説明 | 例 |
-|------|------|-----|
-| excel_file | Excel出力ファイル名 | arxiv_summaries.xlsx |
+### [Files] – File Settings
 
-### [OpenAI] - 要約設定
+| Key | Description | Example |
+|------|-------------|---------|
+| `excel_file` | Excel output filename | `arxiv_summaries.xlsx` |
 
-| 項目 | 説明 | デフォルト |
-|------|------|----------|
-| use_openai | 要約機能の有効/無効 | false |
+### [OpenAI] – Summarization Settings
 
-## 出力結果
+| Key | Description | Default |
+|------|-------------|---------|
+| `use_openai` | Enable/disable summarization | `false` |
 
-### Excelファイル
-- **シート名:** 日付ごと（例: `2024-01-01`）
-- **列:** 投稿日、タイトル、arXiv ID、PDF URL、ファイル名、要約
+## Output
 
-### PDFファイル
-- **保存場所:** 日付フォルダ（例: `20240101/`）
-- **ファイル名:** arXiv ID（例: `2401.12345.pdf`）
+### Excel File
 
-### ログファイル
-- **ファイル名:** `arxiv_process.log`
+- **Sheet name:** One per date (e.g., `2024-01-01`)
+- **Columns:** Posted Date, Title, arXiv ID, PDF URL, Filename, Summary
 
-## 実行例
+### PDF Files
 
-### 例1: 1日だけ処理
+- **Location:** Date folders (e.g., `20240101/`)
+- **Filename:** arXiv ID (e.g., `2401.12345.pdf`)
+
+### Log File
+
+- **Filename:** `arxiv_process.log`
+
+## Examples
+
+### Process a single day
+
 ```ini
 [DateRange]
 start_date = 2024/01/15
@@ -155,59 +177,46 @@ end_date = 2024/01/15
 today_only = false
 ```
 
-### 例2: 今日の論文のみ取得
+### Fetch today's papers only
+
 ```ini
 [DateRange]
 today_only = true
 ```
 
-### 例3: 要約機能を有効化
+### Enable summarization
+
 ```ini
 [OpenAI]
 use_openai = true
 ```
 
-## トラブルシューティング
+## Troubleshooting
 
-### エラー: "設定ファイルが見つかりません"
-`config.ini.template` をコピーして `config.ini` を作成してください。
+| Error / Warning | Solution |
+|-----------------|----------|
+| Configuration file not found | Copy `config.ini.template` to `config.ini` |
+| start_date is later than end_date | Check the dates in `config.ini` |
+| Excel file is open | Close the Excel file and retry |
+| Already processed | Delete the corresponding sheet in the Excel file to reprocess |
+| Summary not performed | Set `use_openai = true` and configure env vars |
 
-### エラー: "start_dateがend_dateより後の日付になっています"
-`config.ini` の日付を確認してください。
+## Notes
 
-### エラー: "Excelファイルが開かれています"
-出力先のExcelファイルを閉じてから再実行してください。
+1. **arXiv API Rate Limits** – Avoid sending too many requests in a short period. `max_results` of 100–500 is recommended.
+2. **Date Range** – Long ranges take more time. Split into smaller chunks if needed.
+3. **API Key Security** – Never commit API keys to GitHub. The `.env` file is in `.gitignore`.
 
-### 警告: "既に調査済みです"
-その日付は既に処理済みです。再処理したい場合は、Excelファイルの該当シートを削除してください。
+## License
 
-### 要約が「要約未実施」と表示される
-`config.ini` で `use_openai = true` に設定し、環境変数を設定してください。
+MIT License
 
-## 注意事項
+## Intended Use
 
-1. **arXiv APIのレート制限**
-   - 短時間に大量のリクエストを送ると制限される可能性があります
-   - `max_results` は100〜500程度を推奨
+This script is designed for **research and educational purposes**:
 
-2. **日付範囲**
-   - 長期間を指定すると処理に時間がかかります
-   - 必要に応じて期間を分割して実行してください
+- Streamlining literature reviews in academic research
+- Tracking latest research trends in educational institutions
+- Collecting and organizing papers for personal study
 
-3. **APIキーの管理**
-   - APIキーは絶対にGitHubなどに公開しないでください
-   - `.env` ファイルは `.gitignore` に含まれています
-
-## ライセンス
-
-MITライセンス
-
-## 利用用途
-
-本スクリプトは**研究・教育目的**での利用を想定しています。
-
-- 学術研究における論文調査・文献レビューの効率化
-- 教育機関での最新研究動向の把握
-- 個人学習における論文収集・整理
-
-商用利用の際は、arXiv の利用規約および各論文の著作権にご注意ください。
+For commercial use, please refer to the arXiv terms of service and individual paper copyrights.
